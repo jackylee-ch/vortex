@@ -45,6 +45,9 @@ lifetime_wrapper!(
     duckdb_destroy_logical_type
 );
 
+/// The widest decimal precision DuckDB's `DECIMAL(width, scale)` can represent.
+const DUCKDB_MAX_DECIMAL_PRECISION: u8 = 38;
+
 /// `LogicalType` is Send+Sync, as the wrapped pointer is Send+Sync.
 unsafe impl Send for LogicalType {}
 unsafe impl Sync for LogicalType {}
@@ -91,11 +94,18 @@ impl LogicalType {
     }
 
     /// Creates a DuckDB decimal logical type with the specified precision and scale.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `precision` exceeds DuckDB's maximum of 38. Vortex decimals allow a
+    /// precision up to 76, so a file may legally declare a column DuckDB cannot represent.
     pub fn decimal_type(precision: u8, scale: u8) -> VortexResult<Self> {
-        assert!(
-            precision <= 38,
-            "DuckDB decimal type precision must be <= 38. precision: {precision}"
-        );
+        if precision > DUCKDB_MAX_DECIMAL_PRECISION {
+            vortex_bail!(
+                "DuckDB decimal type precision must be <= {DUCKDB_MAX_DECIMAL_PRECISION}. \
+                 precision: {precision}"
+            );
+        }
 
         let ptr = unsafe { duckdb_create_decimal_type(precision, scale) };
         if ptr.is_null() {
@@ -501,6 +511,30 @@ mod tests {
 
         assert_eq!(original_width, cloned_width);
         assert_eq!(original_scale, cloned_scale);
+    }
+
+    /// Vortex allows a decimal precision up to 76, DuckDB only up to 38, so the wider ones have to
+    /// come back as an error rather than unwinding out of the extension's C entry points.
+    #[test]
+    fn decimal_type_rejects_precision_above_duckdb_maximum() {
+        for precision in [39, 76, u8::MAX] {
+            let message = LogicalType::decimal_type(precision, 0)
+                .err()
+                .map(|err| err.to_string())
+                .unwrap_or_default();
+            assert!(
+                message.contains("must be <= 38"),
+                "precision {precision} should have been rejected, got: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn decimal_type_accepts_duckdb_maximum_precision() -> VortexResult<()> {
+        for precision in [1, 18, DUCKDB_MAX_DECIMAL_PRECISION] {
+            LogicalType::decimal_type(precision, 0)?;
+        }
+        Ok(())
     }
 
     #[test]
