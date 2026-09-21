@@ -8,6 +8,7 @@ use std::fmt::Formatter;
 use vortex::error::VortexExpect;
 use vortex::error::VortexResult;
 use vortex::error::vortex_bail;
+use vortex::error::vortex_ensure;
 
 use crate::cpp::DUCKDB_TYPE;
 use crate::cpp::duckdb_array_type_array_size;
@@ -94,18 +95,12 @@ impl LogicalType {
     }
 
     /// Creates a DuckDB decimal logical type with the specified precision and scale.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `precision` exceeds DuckDB's maximum of 38. Vortex decimals allow a
-    /// precision up to 76, so a file may legally declare a column DuckDB cannot represent.
     pub fn decimal_type(precision: u8, scale: u8) -> VortexResult<Self> {
-        if precision > DUCKDB_MAX_DECIMAL_PRECISION {
-            vortex_bail!(
-                "DuckDB decimal type precision must be <= {DUCKDB_MAX_DECIMAL_PRECISION}. \
-                 precision: {precision}"
-            );
-        }
+        vortex_ensure!(
+            precision <= DUCKDB_MAX_DECIMAL_PRECISION,
+            "DuckDB decimal type precision must be <= {DUCKDB_MAX_DECIMAL_PRECISION}. \
+             precision: {precision}"
+        );
 
         let ptr = unsafe { duckdb_create_decimal_type(precision, scale) };
         if ptr.is_null() {
