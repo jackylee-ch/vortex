@@ -38,14 +38,8 @@ pub(crate) fn stats_set_to_df(
     })
 }
 
-/// Read one scalar-valued statistic and convert it to DataFusion, or report it absent.
-///
-/// Both halves come from the file: the stored value out of the footer's stats set, and `dtype` from
-/// the column. So every step can legitimately fail on a file we did not write — `Stat::dtype`
-/// returns `None` where the statistic does not apply (`Min`/`Max` of a null column, `Sum` of a
-/// string, list or struct column), and `Scalar::try_new` rejects a stored value that does not match
-/// the column dtype. A statistic we cannot convert becomes `Absent`, which is what the DataFusion
-/// conversion at the end of the chain already did with the values it could not represent.
+/// Read one scalar-valued statistic and convert it to DataFusion, or `Absent` if it does not apply
+/// to `dtype` or cannot be represented.
 fn scalar_stat_to_df(
     stats_set: &StatsSet,
     stat: Stat,
@@ -92,20 +86,15 @@ mod tests {
         Ok(())
     }
 
-    /// A statistic the column dtype cannot carry has to come back `Absent`. Both sides of this
-    /// conversion are read out of the file, so a footer can pair a statistic with a dtype that has
-    /// no scalar type for it, or with a value of the wrong type.
+    /// A statistic the column dtype cannot carry comes back `Absent`.
     #[rstest]
-    // `Stat::Min`/`Max` have no dtype for a null column.
     #[case::min_of_null_column(Stat::Min, DType::Null, ScalarValue::from(1i32))]
     #[case::max_of_null_column(Stat::Max, DType::Null, ScalarValue::from(1i32))]
-    // `Sum` has no dtype for a string column.
     #[case::sum_of_utf8_column(
         Stat::Sum,
         DType::Utf8(Nullability::NonNullable),
         ScalarValue::from(1i32)
     )]
-    // A stored value the column dtype cannot hold.
     #[case::value_disagrees_with_dtype(
         Stat::Min,
         DType::Bool(Nullability::NonNullable),
@@ -124,8 +113,7 @@ mod tests {
         Ok(())
     }
 
-    /// The precision of a statistic that does convert must survive, rather than everything
-    /// collapsing to `Absent` or to `Exact`.
+    /// A statistic that does convert keeps its precision.
     #[rstest]
     #[case::exact(
         VortexPrecision::exact(ScalarValue::from(7i32)),
