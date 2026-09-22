@@ -16,6 +16,7 @@ use vortex_array::expr::BoundExpression;
 use vortex_buffer::BitBufferMut;
 use vortex_error::VortexError;
 use vortex_error::VortexResult;
+use vortex_error::vortex_ensure;
 use vortex_mask::Mask;
 use vortex_session::VortexSession;
 
@@ -65,6 +66,18 @@ impl ZonedReader {
         let dtype = layout.dtype().clone();
         let row_count = layout.row_count();
         let zone_len = layout.zone_len;
+
+        // A zone count that disagrees with `row_count` / `zone_len` would index past the mask.
+        vortex_ensure!(
+            zone_len > 0,
+            "zoned layout reader requires a non-zero zone length"
+        );
+        let expected_zones = row_count.div_ceil(zone_len as u64);
+        vortex_ensure!(
+            zone_count as u64 == expected_zones,
+            "zoned layout declares {zone_count} zones, but {row_count} rows of {zone_len}-row \
+             zones require {expected_zones}"
+        );
 
         Ok(Self {
             pruning: PruningState::new(
@@ -511,6 +524,45 @@ mod test {
                 buffer![1i32, 2, 3, 4, 5, 6, 7, 8, 9].into_array(),
                 &mut ctx
             );
+            Ok(())
+        })
+    }
+
+    /// A zone count that disagrees with `row_count` / `zone_len` is rejected on open. The fixture
+    /// is 9 rows in 3-row zones, so 3 is the only valid count.
+    #[rstest]
+    fn try_new_rejects_mismatched_zone_count(
+        #[from(stats_layout)] (segments, layout): (Arc<dyn SegmentSource>, LayoutRef),
+    ) -> VortexResult<()> {
+        let zoned = layout.as_::<Zoned>().clone();
+        block_on(|handle| async {
+            let session = session_with_handle(handle);
+            for bad in [2usize, 4] {
+                let message = super::ZonedReader::try_new(
+                    zoned.clone(),
+                    bad,
+                    "".into(),
+                    Arc::clone(&segments),
+                    session.clone(),
+                    Default::default(),
+                )
+                .err()
+                .map(|err| err.to_string())
+                .unwrap_or_default();
+                assert!(
+                    message.contains("require 3"),
+                    "zone count {bad} should be rejected, got: {message}"
+                );
+            }
+
+            super::ZonedReader::try_new(
+                zoned.clone(),
+                3,
+                "".into(),
+                Arc::clone(&segments),
+                session,
+                Default::default(),
+            )?;
             Ok(())
         })
     }
