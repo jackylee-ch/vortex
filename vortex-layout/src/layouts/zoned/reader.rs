@@ -282,8 +282,8 @@ mod test {
     use crate::layouts::zoned::LegacyStats;
     use crate::layouts::zoned::LegacyStatsLayoutEncoding;
     use crate::layouts::zoned::LegacyStatsMetadata;
-    use crate::layouts::zoned::Zoned;
     use crate::layouts::zoned::ZoneMapSchema;
+    use crate::layouts::zoned::Zoned;
     use crate::layouts::zoned::ZonedLayout;
     use crate::layouts::zoned::writer::ZonedLayoutOptions;
     use crate::layouts::zoned::writer::ZonedStrategy;
