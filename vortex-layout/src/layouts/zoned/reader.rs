@@ -283,6 +283,8 @@ mod test {
     use crate::layouts::zoned::LegacyStatsLayoutEncoding;
     use crate::layouts::zoned::LegacyStatsMetadata;
     use crate::layouts::zoned::Zoned;
+    use crate::layouts::zoned::ZoneMapSchema;
+    use crate::layouts::zoned::ZonedLayout;
     use crate::layouts::zoned::writer::ZonedLayoutOptions;
     use crate::layouts::zoned::writer::ZonedStrategy;
     use crate::segments::SegmentSource;
@@ -528,42 +530,33 @@ mod test {
         })
     }
 
-    /// A zone count that disagrees with `row_count` / `zone_len` is rejected on open. The fixture
-    /// is 9 rows in 3-row zones, so 3 is the only valid count.
+    /// A zone map whose zone count disagrees with `row_count` / `zone_len` is
+    /// rejected on open. The fixture has 9 rows and 3 zones, so zone lengths 2 and 5 are invalid.
     #[rstest]
-    fn try_new_rejects_mismatched_zone_count(
+    #[case::too_few_zones(2)]
+    #[case::too_many_zones(5)]
+    #[should_panic(expected = "declares 3 zones")]
+    fn new_reader_rejects_mismatched_zone_count(
         #[from(stats_layout)] (segments, layout): (Arc<dyn SegmentSource>, LayoutRef),
-    ) -> VortexResult<()> {
-        let zoned = layout.as_::<Zoned>().clone();
+        #[case] zone_len: usize,
+    ) {
+        let zoned = layout.as_::<Zoned>();
+        let ZoneMapSchema::AggregateFns(aggregate_fns) = &zoned.zone_map_schema else {
+            unreachable!("ZonedStrategy writes aggregate functions")
+        };
+        let invalid_layout = ZonedLayout::try_new(
+            layout.slot(0).unwrap().vortex_expect("data child"),
+            layout.slot(1).unwrap().vortex_expect("zones child"),
+            NonZeroUsize::new(zone_len).vortex_expect("non zero"),
+            Arc::clone(aggregate_fns),
+        )
+        .unwrap()
+        .into_layout();
+
         block_on(|handle| async {
             let session = session_with_handle(handle);
-            for bad in [2usize, 4] {
-                let message = super::ZonedReader::try_new(
-                    zoned.clone(),
-                    bad,
-                    "".into(),
-                    Arc::clone(&segments),
-                    session.clone(),
-                    Default::default(),
-                )
-                .err()
-                .map(|err| err.to_string())
-                .unwrap_or_default();
-                assert!(
-                    message.contains("require 3"),
-                    "zone count {bad} should be rejected, got: {message}"
-                );
-            }
-
-            super::ZonedReader::try_new(
-                zoned.clone(),
-                3,
-                "".into(),
-                Arc::clone(&segments),
-                session,
-                Default::default(),
-            )?;
-            Ok(())
+            invalid_layout.new_reader("".into(), segments, &session, &Default::default())
         })
+        .unwrap();
     }
 }
