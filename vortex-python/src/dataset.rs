@@ -14,10 +14,13 @@ use vortex::array::ArrayRef;
 use vortex::array::ExecutionCtx;
 use vortex::array::VortexSessionExecute;
 use vortex::array::arrays::PrimitiveArray;
+use vortex::array::builtins::ArrayBuiltins;
 use vortex::array::iter::ArrayIteratorExt;
 use vortex::dtype::DType;
 use vortex::dtype::FieldName;
 use vortex::dtype::FieldNames;
+use vortex::dtype::Nullability::NonNullable;
+use vortex::dtype::PType;
 use vortex::error::VortexResult;
 use vortex::expr::Expression;
 use vortex::expr::root;
@@ -71,8 +74,8 @@ pub fn read_array_from_reader(
     }
 
     if let Some(indices) = indices {
-        let primitive = indices.execute::<PrimitiveArray>(ctx)?;
-        let indices = primitive.into_buffer();
+        let casted = indices.cast(DType::Primitive(PType::U64, NonNullable))?;
+        let indices = casted.execute::<PrimitiveArray>(ctx)?.into_buffer::<u64>();
         scan = scan.with_row_indices(StrictSortedBuffer::try_new(indices)?);
     }
 
