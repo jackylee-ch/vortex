@@ -10,8 +10,6 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::PyTypeError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyInt;
-use pyo3::types::PyString;
 use vortex::array::ArrayRef;
 use vortex::array::ExecutionCtx;
 use vortex::array::VortexSessionExecute;
@@ -86,41 +84,40 @@ pub fn read_array_from_reader(
     scan.into_array_iter(&runtime)?.read_all()
 }
 
+/// A projected column, selected either by name or by positional index.
+#[derive(FromPyObject)]
+pub enum ProjectionColumn {
+    Name(String),
+    Index(usize),
+}
+
 fn projection_from_python(
-    columns: Option<Vec<Bound<PyAny>>>,
+    columns: Option<Vec<ProjectionColumn>>,
     dtype: &DType,
 ) -> PyResult<Expression> {
-    fn field_from_pyany(field: &Bound<PyAny>, dtype: &DType) -> PyResult<FieldName> {
-        if field.is_instance_of::<PyString>() {
-            Ok(FieldName::from(field.cast::<PyString>()?.to_str()?))
-        } else if field.is_instance_of::<PyInt>() {
-            // Positional projection: map the index onto the top-level field name.
-            let DType::Struct(struct_dtype, _) = dtype else {
-                return Err(PyTypeError::new_err(
-                    "projection: integer indices are only valid for a struct-typed file",
-                ));
-            };
-            let index = field.extract::<usize>()?;
-            struct_dtype.field_name(index).cloned().ok_or_else(|| {
-                PyIndexError::new_err(format!(
-                    "projection: column index {index} is out of range for {} columns",
-                    struct_dtype.nfields()
-                ))
-            })
-        } else {
-            Err(PyTypeError::new_err(format!(
-                "projection: expected a list of strings or integers or None, but found: {field}.",
-            )))
-        }
-    }
-
     Ok(match columns {
         None => root(),
         Some(columns) => {
-            let fields: Vec<_> = columns
-                .iter()
-                .map(|field| field_from_pyany(field, dtype))
-                .collect::<PyResult<_>>()?;
+            let fields = columns
+                .into_iter()
+                .map(|column| match column {
+                    ProjectionColumn::Name(name) => Ok(FieldName::from(name.as_str())),
+                    ProjectionColumn::Index(index) => {
+                        // Positional projection: map the index onto the top-level field name.
+                        let DType::Struct(struct_dtype, _) = dtype else {
+                            return Err(PyTypeError::new_err(
+                                "projection: integer indices are only valid for a struct-typed file",
+                            ));
+                        };
+                        struct_dtype.field_name(index).cloned().ok_or_else(|| {
+                            PyIndexError::new_err(format!(
+                                "projection: column index {index} is out of range for {} columns",
+                                struct_dtype.nfields()
+                            ))
+                        })
+                    }
+                })
+                .collect::<PyResult<Vec<_>>>()?;
             select(FieldNames::from(fields), root())
         }
     })
@@ -162,7 +159,7 @@ impl PyVortexDataset {
     pub(crate) fn to_array_inner<'py>(
         &self,
         py: Python<'py>,
-        columns: Option<Vec<Bound<'py, PyAny>>>,
+        columns: Option<Vec<ProjectionColumn>>,
         row_filter: Option<&Bound<'py, PyExpr>>,
         indices: Option<PyArrayRef>,
         row_range: Option<(u64, u64)>,
@@ -190,7 +187,7 @@ impl PyVortexDataset {
     #[pyo3(signature = (*, columns = None, row_filter = None, indices = None, row_range = None))]
     pub fn to_array<'py>(
         self_: PyRef<'py, Self>,
-        columns: Option<Vec<Bound<'py, PyAny>>>,
+        columns: Option<Vec<ProjectionColumn>>,
         row_filter: Option<&Bound<'py, PyExpr>>,
         indices: Option<PyArrayRef>,
         row_range: Option<(u64, u64)>,
@@ -201,7 +198,7 @@ impl PyVortexDataset {
     #[pyo3(signature = (*, columns = None, row_filter = None, split_by = None, row_range = None))]
     pub fn to_record_batch_reader(
         self_: PyRef<Self>,
-        columns: Option<Vec<Bound<'_, PyAny>>>,
+        columns: Option<Vec<ProjectionColumn>>,
         row_filter: Option<&Bound<'_, PyExpr>>,
         split_by: Option<usize>,
         row_range: Option<(u64, u64)>,
