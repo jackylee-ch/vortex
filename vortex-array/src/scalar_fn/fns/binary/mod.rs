@@ -241,7 +241,7 @@ impl ScalarFnVTable for Binary {
         // Other null cases either fall out of the identity/annihilator rules
         // above (`null AND true`, `null OR false`) or cannot be simplified under
         // Kleene semantics (`null AND x`, `null OR x` for non-literal `x`).
-        Ok(match operator {
+        let simplified = match operator {
             Operator::And => match (bool_literal(lhs), bool_literal(rhs)) {
                 (Some(Some(false)), _) | (_, Some(Some(false))) => Some(bound::lit(false)),
                 (Some(Some(true)), _) => Some(rhs.clone()),
@@ -257,7 +257,17 @@ impl ScalarFnVTable for Binary {
                 _ => None,
             },
             _ => None,
-        })
+        };
+
+        // The annihilator literal and the identity child can be less nullable than
+        // `lhs OP rhs`, so keep the result dtype that binding inferred.
+        Ok(simplified.map(|simplified| {
+            if simplified.dtype() == expr.dtype() {
+                simplified
+            } else {
+                bound::cast(simplified, expr.dtype().clone())
+            }
+        }))
     }
 
     fn reduce<T: ReduceNode>(&self, operator: &Operator, node: &T) -> VortexResult<Option<T>> {
