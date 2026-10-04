@@ -6,15 +6,18 @@ use std::sync::Arc;
 use arrow_array::RecordBatchReader;
 use arrow_schema::SchemaRef;
 use itertools::Itertools;
+use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::PyTypeError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyInt;
 use pyo3::types::PyString;
 use vortex::array::ArrayRef;
 use vortex::array::ExecutionCtx;
 use vortex::array::VortexSessionExecute;
 use vortex::array::arrays::PrimitiveArray;
 use vortex::array::iter::ArrayIteratorExt;
+use vortex::dtype::DType;
 use vortex::dtype::FieldName;
 use vortex::dtype::FieldNames;
 use vortex::error::VortexResult;
@@ -83,13 +86,30 @@ pub fn read_array_from_reader(
     scan.into_array_iter(&runtime)?.read_all()
 }
 
-fn projection_from_python(columns: Option<Vec<Bound<PyAny>>>) -> PyResult<Expression> {
-    fn field_from_pyany(field: &Bound<PyAny>) -> PyResult<FieldName> {
-        if field.clone().is_instance_of::<PyString>() {
+fn projection_from_python(
+    columns: Option<Vec<Bound<PyAny>>>,
+    dtype: &DType,
+) -> PyResult<Expression> {
+    fn field_from_pyany(field: &Bound<PyAny>, dtype: &DType) -> PyResult<FieldName> {
+        if field.is_instance_of::<PyString>() {
             Ok(FieldName::from(field.cast::<PyString>()?.to_str()?))
+        } else if field.is_instance_of::<PyInt>() {
+            // Positional projection: map the index onto the top-level field name.
+            let DType::Struct(struct_dtype, _) = dtype else {
+                return Err(PyTypeError::new_err(
+                    "projection: integer indices are only valid for a struct-typed file",
+                ));
+            };
+            let index = field.extract::<usize>()?;
+            struct_dtype.field_name(index).cloned().ok_or_else(|| {
+                PyIndexError::new_err(format!(
+                    "projection: column index {index} is out of range for {} columns",
+                    struct_dtype.nfields()
+                ))
+            })
         } else {
             Err(PyTypeError::new_err(format!(
-                "projection: expected list of strings or None, but found: {field}.",
+                "projection: expected a list of strings or integers or None, but found: {field}.",
             )))
         }
     }
@@ -99,7 +119,7 @@ fn projection_from_python(columns: Option<Vec<Bound<PyAny>>>) -> PyResult<Expres
         Some(columns) => {
             let fields: Vec<_> = columns
                 .iter()
-                .map(field_from_pyany)
+                .map(|field| field_from_pyany(field, dtype))
                 .collect::<PyResult<_>>()?;
             select(FieldNames::from(fields), root())
         }
@@ -148,7 +168,7 @@ impl PyVortexDataset {
         row_range: Option<(u64, u64)>,
     ) -> PyVortexResult<PyArrayRef> {
         let vxf = self.vxf.clone();
-        let projection = projection_from_python(columns)?;
+        let projection = projection_from_python(columns, vxf.dtype())?;
         let filter = filter_from_python(row_filter);
         let indices = indices.map(|i| i.into_inner());
 
@@ -187,7 +207,7 @@ impl PyVortexDataset {
         row_range: Option<(u64, u64)>,
     ) -> PyVortexResult<Py<PyAny>> {
         let vxf = self_.vxf.clone();
-        let projection = projection_from_python(columns)?;
+        let projection = projection_from_python(columns, vxf.dtype())?;
         let filter = filter_from_python(row_filter);
 
         let reader = self_.py().detach(move || {
