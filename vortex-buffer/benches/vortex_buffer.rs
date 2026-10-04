@@ -75,7 +75,7 @@ impl<T: ArrowNativeType, R: ArrowNativeType> MapEach<T, R> for Arrow<ScalarBuffe
     }
 }
 
-impl<T: Copy, R> MapEach<T, R> for Buffer<T> {
+impl<T: Copy, R: Copy> MapEach<T, R> for Buffer<T> {
     type Output = BufferMut<R>;
 
     fn map_each<F>(self, f: F) -> Self::Output
@@ -86,7 +86,7 @@ impl<T: Copy, R> MapEach<T, R> for Buffer<T> {
     }
 }
 
-impl<T: Copy, R> MapEach<T, R> for BufferMut<T> {
+impl<T: Copy, R: Copy> MapEach<T, R> for BufferMut<T> {
     type Output = BufferMut<R>;
 
     fn map_each<F>(self, f: F) -> Self::Output

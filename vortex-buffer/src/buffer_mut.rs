@@ -785,6 +785,7 @@ impl<T> BufferMut<T> {
     pub fn map_each_in_place<R, F>(self, mut f: F) -> BufferMut<R>
     where
         T: Copy,
+        R: Copy,
         F: FnMut(T) -> R,
     {
         assert_eq!(
@@ -796,7 +797,9 @@ impl<T> BufferMut<T> {
         let mut buf: BufferMut<R> = unsafe { std::mem::transmute(self) };
         buf.iter_mut()
             .for_each(|item| *item = f(unsafe { std::mem::transmute_copy(item) }));
-        buf
+        // `transmute` preserves `T`'s alignment, which can be weaker than `R`'s.
+        let alignment = buf.alignment().max(Alignment::of::<R>());
+        buf.aligned(alignment)
     }
 
     /// Return a `BufferMut<T>` with the same data as this one with the given alignment.
@@ -1074,6 +1077,7 @@ fn misaligned_scalar_type(alignment: Alignment, scalar_align: Alignment) -> ! {
 
 #[cfg(test)]
 mod tests {
+    use std::alloc::Layout;
     use std::cell::Cell;
 
     use allocator_api2::alloc::Global;
@@ -1296,6 +1300,16 @@ mod tests {
         // Add one, and cast to an unsigned u32 in the same closure
         let buf = buf.map_each_in_place(|i| (i + 1) as u32);
         assert_eq!(buf.as_slice(), &[1u32, 2, 3]);
+    }
+
+    #[test]
+    fn map_each_in_place_keeps_output_alignment_valid() {
+        let bytes = BufferMut::<[u8; 4]>::copy_from_aligned([[1u8, 0, 0, 0]], Alignment::new(1));
+        assert_eq!(1, Layout::new::<[u8; 4]>().align());
+        let words = bytes.map_each_in_place(u32::from_ne_bytes);
+
+        assert_eq!(words.as_slice(), [1]);
+        assert!(words.alignment().is_aligned_to(Alignment::of::<u32>()));
     }
 
     #[test]

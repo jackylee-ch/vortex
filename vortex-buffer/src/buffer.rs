@@ -345,6 +345,7 @@ impl<T> Buffer<T> {
     pub fn map_each_in_place<R, F>(self, mut f: F) -> BufferMut<R>
     where
         T: Copy,
+        R: Copy,
         F: FnMut(T) -> R,
     {
         match self.try_into_mut() {
