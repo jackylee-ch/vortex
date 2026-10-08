@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright the Vortex contributors
 
-//! Integer compression statistics over arrays with and without nulls.
+//! Float compression statistics over arrays with and without nulls.
 
 use std::sync::LazyLock;
 
@@ -13,8 +13,8 @@ use vortex_array::arrays::PrimitiveArray;
 use vortex_array::validity::Validity;
 use vortex_buffer::BitBuffer;
 use vortex_buffer::Buffer;
+use vortex_compressor::stats::FloatStats;
 use vortex_compressor::stats::GenerateStatsOptions;
-use vortex_compressor::stats::IntegerStats;
 use vortex_session::VortexSession;
 
 #[global_allocator]
@@ -29,13 +29,16 @@ fn main() {
 }
 
 /// Runs of up to 8 values, drawn from 1024 distinct values.
-fn values() -> Buffer<u32> {
+fn values() -> Buffer<f64> {
     let mut rng = StdRng::seed_from_u64(0);
     let mut values = Vec::with_capacity(LEN);
     while values.len() < LEN {
         let value: u32 = rng.random_range(0..1024);
         let run = rng.random_range(1..=8);
-        values.extend(std::iter::repeat_n(value, run.min(LEN - values.len())));
+        values.extend(std::iter::repeat_n(
+            f64::from(value),
+            run.min(LEN - values.len()),
+        ));
     }
     Buffer::from(values)
 }
@@ -59,7 +62,7 @@ fn bench_stats(bencher: Bencher, validity: Validity, count_distinct_values: bool
             )
         })
         .bench_refs(|(array, ctx)| {
-            IntegerStats::generate_opts(
+            FloatStats::generate_opts(
                 array,
                 GenerateStatsOptions {
                     count_distinct_values,
@@ -70,21 +73,21 @@ fn bench_stats(bencher: Bencher, validity: Validity, count_distinct_values: bool
 }
 
 #[divan::bench]
-fn integer_stats_non_null(bencher: Bencher) {
+fn float_stats_non_null(bencher: Bencher) {
     bench_stats(bencher, Validity::NonNullable, false);
 }
 
 #[divan::bench]
-fn integer_stats_nullable(bencher: Bencher) {
+fn float_stats_nullable(bencher: Bencher) {
     bench_stats(bencher, sparse_nulls(), false);
 }
 
 #[divan::bench]
-fn integer_stats_all_non_null(bencher: Bencher) {
+fn float_stats_all_non_null(bencher: Bencher) {
     bench_stats(bencher, Validity::NonNullable, true);
 }
 
 #[divan::bench]
-fn integer_stats_all_nullable(bencher: Bencher) {
+fn float_stats_all_nullable(bencher: Bencher) {
     bench_stats(bencher, sparse_nulls(), true);
 }
