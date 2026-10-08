@@ -3,7 +3,7 @@
 
 import math
 import os
-from datetime import time
+from datetime import date, time
 from decimal import Decimal
 
 import polars as pl
@@ -160,3 +160,14 @@ def test_is_not_null_predicate_pushdown(tmp_path):
     result = vx.open(str(path)).to_polars().filter(expr).collect()
     assert_frame_equal(result, expected)
     assert result["id"].to_list() == [0, 2]
+
+
+def test_polars_date_literals(tmp_path):
+    frame = pl.DataFrame({"id": [0, 1, 2, 3], "x": [date(2024, 1, 1), date(2024, 1, 2), None, date(2024, 1, 3)]})
+    expr = pl.col("x") >= date(2024, 1, 2)
+    path = tmp_path / "date_literals.vortex"
+    vx.io.write(vx.array(frame.to_arrow()), str(path))
+    expected_frame = frame.lazy().filter(expr).collect()
+    actual = vx.open(str(path)).to_polars().filter(expr).collect()
+    assert_frame_equal(actual, expected_frame)
+    assert actual["id"].to_list() == [1, 3]
