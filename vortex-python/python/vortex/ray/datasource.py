@@ -75,7 +75,7 @@ class VortexDatasource(Datasource):
             )
         )
         paths = [path for path, _ in paths_and_sizes]
-        if not isinstance(fs, LocalFileSystem):
+        if not isinstance(fs.unwrap(), LocalFileSystem):
             # Ray returns object store paths without their scheme.
             scheme = urlsplit(url).scheme
             paths = [path if "://" in path else f"{scheme}://{quote(path)}" for path in paths]
