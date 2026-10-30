@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, TypeVar, final
+from urllib.parse import quote, urlsplit
 
+from pyarrow.fs import LocalFileSystem
 from ray.data import Datasource, ReadTask
 from ray.data.block import BlockMetadata
 from ray.data.context import DataContext
@@ -69,7 +71,12 @@ class VortexDatasource(Datasource):
                 ignore_missing_paths=False,
             )
         )
-        self._paths: list[str] = [path for path, _ in paths_and_sizes]
+        paths = [path for path, _ in paths_and_sizes]
+        if not isinstance(fs, LocalFileSystem):
+            # Ray returns object store paths without their scheme.
+            scheme = urlsplit(url).scheme
+            paths = [path if "://" in path else f"{scheme}://{quote(path)}" for path in paths]
+        self._paths: list[str] = paths
         self._batch_size = batch_size
 
     @override
