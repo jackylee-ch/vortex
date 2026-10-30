@@ -9,6 +9,7 @@ from urllib.parse import quote, urlsplit
 
 from pyarrow.fs import LocalFileSystem
 from ray.data import Datasource, ReadTask
+from ray.data._internal.util import RetryingPyFileSystem
 from ray.data.block import BlockMetadata
 from ray.data.context import DataContext
 from ray.data.datasource import BaseFileMetadataProvider, DefaultFileMetadataProvider
@@ -63,6 +64,8 @@ class VortexDatasource(Datasource):
         self._filter = filter
 
         urls, fs = _resolve_paths_and_filesystem(url, None)
+        fs = RetryingPyFileSystem.wrap(fs, retryable_errors=DataContext.get_current().retried_io_errors)
+
         paths_and_sizes = list(
             meta_provider.expand_paths(
                 urls,

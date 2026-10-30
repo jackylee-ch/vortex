@@ -115,6 +115,41 @@
       "enabled": false
     },
     {
+      "description": "Keep pinned GitHub Actions current, in one PR per run. minor and patch are off above so Cargo.toml floors don't rise on downstream users, but actions have no downstream users: without this, the actions pinned to an exact version (actions/cache v6.1.0, crate-ci/typos, and about 30 more) would never get a patch release, security fixes included.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "enabled": true,
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "Do not split vortex-web's grouped majors by target major, so they share one PR",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "vortex-web/package.json"
+      ],
+      "separateMultipleMajor": false
+    },
+    {
+      "description": "Propose major updates for the explore app in vortex-web, all in one PR per run. Lock file maintenance already takes compatible releases, but without this a new major (Vite, React, Storybook) never arrives. Not automerged: a person reviews the group.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "vortex-web/package.json"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": true,
+      "automerge": false,
+      "groupName": "vortex-web major updates",
+      "groupSlug": "vortex-web-major",
+      "groupSingleUpdates": true
+    },
+    {
       "groupName": "Rust lock file maintenance",
       "groupSlug": "rust-lock-file-maintenance",
       "matchManagers": [
