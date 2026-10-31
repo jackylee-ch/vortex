@@ -51,6 +51,16 @@ SELECT count(*), max(v) FROM '${WORK_DIR}/aggregate-with-filter-year/**/*.vortex
 
 # A filter on a file column keeps the aggregate in the scan
 query TT
+EXPLAIN (FORMAT json) SELECT sum(v), max(v) FROM '${WORK_DIR}/aggregate-with-filter-hive/**/*.vortex' WHERE v > 1;
+----
+<!REGEX>:.*UNGROUPED_AGGREGATE.*
+
+query II
+SELECT sum(v), max(v) FROM '${WORK_DIR}/aggregate-with-filter-hive/**/*.vortex' WHERE v > 1;
+----
+5 3
+
+query TT
 EXPLAIN (FORMAT json) SELECT sum(i), max(j) FROM '${WORK_DIR}/aggregate-with-filter.vortex' WHERE i > 1;
 ----
 <!REGEX>:.*UNGROUPED_AGGREGATE.*
