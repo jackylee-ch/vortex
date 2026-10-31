@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import pyarrow as pa
 import pytest
 import ray
+from pyarrow.fs import GcsFileSystem
 from ray.data import read_datasource
 from typing_extensions import override
 
@@ -50,7 +51,7 @@ def test_partition() -> None:
     assert partition(3, list(range(11))) == [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10]]
 
 
-@pytest.mark.parametrize("scheme", ["", "local://"])
+@pytest.mark.parametrize("scheme", ["", "file://", "fsspec+file://"])
 def test_vortex_datasource(ray_init, tmpdir_factory, scheme: str) -> None:
     folder = tmpdir_factory.mktemp("data")
 
@@ -155,6 +156,11 @@ def test_vortex_datasource_reads_s3(s3_root: Path) -> None:
 
     datasource = VortexDatasource(url="s3://ray-datasource-test/data/")
 
-    # Ray workers don't see the monkeypatched environment.
     blocks = [block for task in datasource.get_read_tasks(2) for block in task()]
     assert sorted(i for block in blocks for i in block["index"]) == list(range(10))
+
+
+def test_url_scheme_of_gcs_is_gs() -> None:
+    from vortex.ray.datasource import _url_scheme
+
+    assert _url_scheme(GcsFileSystem(anonymous=True)) == "gs"
